@@ -50,6 +50,7 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
 
         # Get current worklog content
         worklog_content, sha = github_client.get_worklog_content()
+        original_worklog_content = worklog_content
 
         # Process each day in the range
         current_date = start_date.date()
@@ -67,17 +68,27 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
             # Calculate total hours
             total_hours = toggl_client.calculate_daily_hours(entries)
 
-            # Format as "X.Yh" or "X.Yh+" if there's a running entry
-            current_entry = toggl_client.get_current_time_entry()
+            # Format as "X.Yh" or "X.Yh+" if there's a running entry for today
             hours_str = f"{total_hours}h"
+            current_entry = toggl_client.get_current_time_entry()
             if current_entry:
-                hours_str += "+"
+                # Check if the current entry is for today
+                entry_start = datetime.fromisoformat(current_entry["start"].replace("Z", "+00:00"))
+                entry_start = entry_start.astimezone(timezone)
+                if entry_start.date() == current_date:
+                    hours_str += "+"
 
             # Get descriptions from entries and join with periods
             descriptions = []
             for entry in entries:
-                if entry.get("description") and entry["description"].strip():
-                    descriptions.append(entry["description"].strip())
+                if entry.get("description"):
+                    desc = entry["description"].strip()
+                    if desc:
+                        descriptions.append(desc)
+                    else:
+                        descriptions.append("[REDACTED - to be updated soon]")
+                else:
+                    descriptions.append("[REDACTED - to be updated soon]")
             
             # Deduplicate descriptions while preserving order
             unique_descriptions = []
@@ -134,6 +145,11 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
 
             # Move to next day
             current_date += timedelta(days=1)
+
+        # Check if there are any changes before updating
+        if worklog_content == original_worklog_content:
+            logger.info("No changes detected, skipping GitHub update")
+            return True
 
         # Update the worklog file with all changes
         success = github_client.update_worklog(worklog_content, sha)
