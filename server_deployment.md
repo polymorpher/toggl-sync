@@ -64,7 +64,7 @@ cd toggl-github-sync
    [Service]
    User=your-username
    WorkingDirectory=/path/to/toggl-github-sync/python
-   ExecStart=/path/to/toggl-github-sync/python/venv/bin/python -m toggl_github_sync
+   ExecStart=/path/to/toggl-github-sync/python/venv/bin/python -m toggl_github_sync --schedule
    Restart=on-failure
    RestartSec=5
    Environment=PYTHONUNBUFFERED=1

@@ -5,7 +5,6 @@ import logging
 import ssl
 from datetime import datetime
 from typing import Dict, List
-import certifi
 import difflib
 
 import pytz
