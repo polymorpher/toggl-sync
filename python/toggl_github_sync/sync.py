@@ -73,7 +73,7 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
             current_entry = toggl_client.get_current_time_entry()
             if current_entry:
                 # Check if the current entry is for today
-                entry_start = datetime.fromisoformat(current_entry["start"].replace("Z", "+00:00"))
+                entry_start = datetime.fromisoformat(current_entry["start"])
                 entry_start = entry_start.astimezone(timezone)
                 if entry_start.date() == current_date:
                     hours_str += "+"
