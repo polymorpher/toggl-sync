@@ -53,11 +53,11 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
         original_worklog_content = worklog_content
 
         # Process each day in the range
-        current_date = start_date.date()
-        end_date_date = end_date.date()
+        current_date = end_date.date()
+        start_date_date = start_date.date()
         success = True
 
-        while current_date <= end_date_date:
+        while current_date >= start_date_date:
             # Get start and end of day in configured timezone
             day_start = timezone.localize(datetime.combine(current_date, datetime.min.time()))
             day_end = timezone.localize(datetime.combine(current_date, datetime.max.time()))
@@ -143,8 +143,8 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
 
             logger.info(f"Processed entry for {date_str}: {new_entry}")
 
-            # Move to next day
-            current_date += timedelta(days=1)
+            # Move to previous day
+            current_date -= timedelta(days=1)
 
         # Check if there are any changes before updating
         if worklog_content == original_worklog_content:

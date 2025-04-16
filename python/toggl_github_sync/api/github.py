@@ -94,7 +94,8 @@ class GitHubApiClient:
         # - Any day name (not just English)
         # - Various hour formats
         # - Multi-line descriptions
-        pattern = rf"({date_str}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):\s*.+?)(?=\n\n|\n\*|\Z)"
+        # - Properly handles entry boundaries
+        pattern = rf"^({date_str}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):\s*.+?)(?=\n\n|\n\*|\Z)"
         match = re.search(pattern, content, re.DOTALL | re.MULTILINE)
         
         if match:
