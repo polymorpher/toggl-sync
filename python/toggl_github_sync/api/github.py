@@ -89,18 +89,23 @@ class GitHubApiClient:
         date_str = date.strftime("%Y-%-m-%-d")
         
         # Look for an entry starting with the date
-        pattern = rf"({date_str} [A-Za-z]+ \(\d+\.?\d*h\+?\): .+?)(\n\n|\n\*|\Z)"
-        match = re.search(pattern, content, re.DOTALL)
+        # More robust pattern that handles:
+        # - Optional spaces after date
+        # - Any day name (not just English)
+        # - Various hour formats
+        # - Multi-line descriptions
+        pattern = rf"({date_str}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):\s*.+?)(?=\n\n|\n\*|\Z)"
+        match = re.search(pattern, content, re.DOTALL | re.MULTILINE)
         
         if match:
             entry = match.group(1)
             start_index = match.start()
-            end_index = match.end() - len(match.group(2))
+            end_index = match.end()
             logger.info(f"Found existing entry for {date_str}: {entry[:50]}...")
             return entry, start_index, end_index
-        
-        logger.info(f"No existing entry found for {date_str}")
-        return None
+        else:
+            logger.warning(f"No existing entry found for {date_str}")
+            return None
     
     def update_or_create_entry(self, content: str, new_entry: str, date: datetime) -> str:
         """Update an existing entry or create a new one.
