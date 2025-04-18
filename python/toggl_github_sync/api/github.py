@@ -95,14 +95,15 @@ class GitHubApiClient:
         # - Various hour formats
         # - Multi-line descriptions
         # - Properly handles entry boundaries
-        pattern = rf"^({date_str}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):\s*.+?)(?=\n\n|\n\*|\Z)"
-        match = re.search(pattern, content, re.DOTALL | re.MULTILINE)
+        # - Handles empty entries
+        pattern = rf"^({date_str}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):\s*[^\n]*(?:\n(?!\n)[^\n]*)*)"
+        match = re.search(pattern, content, re.MULTILINE)
         
         if match:
             entry = match.group(1)
             start_index = match.start()
             end_index = match.end()
-            logger.info(f"Found existing entry for {date_str}: {entry[:50]}...")
+            logger.info(f"Found existing entry for {date_str}: {entry[:50] if entry.strip() else '[empty entry]'}...")
             return entry, start_index, end_index
         else:
             logger.warning(f"No existing entry found for {date_str}")

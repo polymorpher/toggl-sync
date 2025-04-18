@@ -68,6 +68,12 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
             # Calculate total hours
             total_hours = toggl_client.calculate_daily_hours(entries)
 
+            # Skip days with 0 hours
+            if total_hours == 0:
+                logger.info(f"Skipping {current_date} as no hours were tracked")
+                current_date -= timedelta(days=1)
+                continue
+
             # Format as "X.Yh" or "X.Yh+" if there's a running entry for today
             hours_str = f"{total_hours}h"
             current_entry = toggl_client.get_current_time_entry()
@@ -107,7 +113,9 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
                     unique_descriptions.append(desc)
             
             description_text = ". ".join(unique_descriptions)
-            if description_text and not description_text.endswith("."):
+            if not description_text.strip():
+                description_text = "[To be updated]"
+            elif not description_text.endswith("."):
                 description_text += "."
 
             # Format the worklog entry
