@@ -134,7 +134,7 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
                     worklog_content[:start_index] + new_entry + worklog_content[end_index:]
                 )
             else:
-                # Add new entry at the top
+                # Add new entry at the top, after any title
                 if worklog_content.startswith("# "):
                     # If the file starts with a title, add after the title
                     title_end = worklog_content.find("\n") + 1
@@ -158,6 +158,37 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
         if worklog_content == original_worklog_content:
             logger.info("No changes detected, skipping GitHub update")
             return True
+
+        # Ensure entries are in reverse chronological order
+        entries = []
+        current_entry = []
+        for line in worklog_content.split('\n'):
+            if line.strip() and not line.startswith('# '):
+                if current_entry:
+                    entries.append('\n'.join(current_entry))
+                    current_entry = []
+                current_entry.append(line)
+            elif current_entry:
+                current_entry.append(line)
+        if current_entry:
+            entries.append('\n'.join(current_entry))
+
+        # Sort entries in reverse chronological order
+        def get_entry_date(entry):
+            try:
+                date_str = entry.split()[0]  # First part is the date
+                return datetime.strptime(date_str, "%Y-%-m-%-d")
+            except (ValueError, IndexError):
+                return datetime.min
+
+        entries.sort(key=get_entry_date, reverse=True)
+
+        # Reconstruct the worklog content
+        if worklog_content.startswith("# "):
+            title = worklog_content[:worklog_content.find("\n") + 1]
+            worklog_content = title + "\n\n".join(entries) + "\n"
+        else:
+            worklog_content = "\n\n".join(entries) + "\n"
 
         # Update the worklog file with all changes
         success = github_client.update_worklog(worklog_content, sha)
