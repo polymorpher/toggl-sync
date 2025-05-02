@@ -3,12 +3,12 @@ requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "toggl_github_sync"
+name = "toggl-sync"
 version = "0.1.0"
-description = "Sync Toggl time entries to GitHub worklog"
+description = "Sync Toggl time entries to GitHub issues and export"
 readme = "README.md"
 authors = [
-    {name = "User", email = "user@example.com"}
+    {name = "Your Name", email = "you@example.com"},
 ]
 license = {text = "MIT"}
 classifiers = [
@@ -18,9 +18,12 @@ classifiers = [
 ]
 requires-python = ">=3.8"
 dependencies = [
-    "requests>=2.28.0",
-    "PyGithub>=1.58.0",
-    "pytz>=2022.1",
+    "requests>=2.20.0",
+    "python-dateutil>=2.8.0",
+    "pygithub>=1.50",
+    "pytz",
+    "pandas>=1.0.0",
+    "reportlab>=3.6.0",
     "python-dotenv>=0.20.0",
     "apscheduler>=3.9.1",
     "sendgrid>=6.9.0",
