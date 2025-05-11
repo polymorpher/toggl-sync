@@ -3,6 +3,7 @@
 import calendar
 import logging
 import ssl
+import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import difflib
@@ -142,12 +143,12 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
                         worklog_content[:title_end]
                         + "\n"
                         + new_entry
-                        + "\n\n"
+                        + "\n"
                         + worklog_content[title_end:]
                     )
                 else:
                     # Otherwise, add at the very top
-                    worklog_content = new_entry + "\n\n" + worklog_content
+                    worklog_content = new_entry + "\n" + worklog_content
 
             logger.info(f"Processed entry for {date_str}: {new_entry}")
 
@@ -159,36 +160,92 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
             logger.info("No changes detected, skipping GitHub update")
             return True
 
-        # Ensure entries are in reverse chronological order
-        entries = []
-        current_entry = []
-        for line in worklog_content.split('\n'):
-            if line.strip() and not line.startswith('# '):
-                if current_entry:
-                    entries.append('\n'.join(current_entry))
-                    current_entry = []
-                current_entry.append(line)
-            elif current_entry:
-                current_entry.append(line)
-        if current_entry:
-            entries.append('\n'.join(current_entry))
+        # --- New parsing, sorting, and reconstruction logic ---
+        parsed_log_entries = []
+        title_prefix_for_reconstruction = ""
+        content_to_parse = worklog_content
+
+        if content_to_parse.startswith("# "):
+            first_newline_idx = content_to_parse.find("\n")
+            if first_newline_idx != -1:
+                title_prefix_for_reconstruction = content_to_parse[:first_newline_idx + 1]  # e.g., "# Title\n"
+                content_to_parse = content_to_parse[first_newline_idx + 1:]
+            else:  # Title without a newline (edge case)
+                title_prefix_for_reconstruction = content_to_parse
+                content_to_parse = ""
+        
+        # Remove leading blank lines from content_to_parse (e.g., the one often after a title)
+        content_to_parse = content_to_parse.lstrip('\n')
+
+        if content_to_parse.strip():  # If there's anything left to parse
+            # Regex to identify the header of any log entry
+            generic_header_regex_str = r"\d{4}-\d{1,2}-\d{1,2}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):"
+            
+            # Regex to find individual, complete entries (including multi-line descriptions)
+            # It matches an entry starting with a header, followed by its description lines.
+            # The negative lookahead `(?!{generic_header_regex_str})` ensures description lines
+            # are not mistaken for new entry headers.
+            individual_entry_pattern = rf"^({generic_header_regex_str}[^\n]*(?:\n(?!{generic_header_regex_str})[^\n]*)*)"
+
+            for match in re.finditer(individual_entry_pattern, content_to_parse, re.MULTILINE):
+                parsed_log_entries.append(match.group(0).strip()) # Add the clean entry text
 
         # Sort entries in reverse chronological order
-        def get_entry_date(entry):
+        def get_entry_date_from_string(entry_text: str) -> datetime:
             try:
-                date_str = entry.split()[0]  # First part is the date
-                return datetime.strptime(date_str, "%Y-%-m-%-d")
+                # Extract date string from the start of entry_text
+                match = re.match(r"(\d{4}-\d{1,2}-\d{1,2})", entry_text)
+                if match:
+                    date_str = match.group(1)
+                    # Use %m and %d for robust parsing of month and day
+                    return datetime.strptime(date_str, "%Y-%m-%d")  
+                return datetime.min # Fallback for malformed entries
             except (ValueError, IndexError):
-                return datetime.min
+                return datetime.min # Fallback for errors
+        
+        parsed_log_entries.sort(key=get_entry_date_from_string, reverse=True)
 
-        entries.sort(key=get_entry_date, reverse=True)
+        # Reconstruct the final worklog content dynamically with week separators
+        final_content_parts = []
+        previous_entry_date_obj = None
 
-        # Reconstruct the worklog content
-        if worklog_content.startswith("# "):
-            title = worklog_content[:worklog_content.find("\n") + 1]
-            worklog_content = title + "\n\n".join(entries) + "\n"
-        else:
-            worklog_content = "\n\n".join(entries) + "\n"
+        for i, entry_text in enumerate(parsed_log_entries):
+            current_entry_date_obj = get_entry_date_from_string(entry_text)
+            # logger.info(f"Processing entry for sorting: Date: {current_entry_date_obj.strftime('%Y-%m-%d') if current_entry_date_obj != datetime.min else 'Invalid Date'}, Entry: '{entry_text[:70]}...'")
+            if i > 0:  # If not the first entry, decide on the separator to prepend
+                separator_due_to_week_change = False
+                if previous_entry_date_obj != datetime.min and current_entry_date_obj != datetime.min:
+                    # Calculate the Monday of the week for the previous entry
+                    prev_monday_date = previous_entry_date_obj.date() - timedelta(days=previous_entry_date_obj.weekday())
+                    # Calculate the Monday of the week for the current entry
+                    curr_monday_date = current_entry_date_obj.date() - timedelta(days=current_entry_date_obj.weekday())
+                    # logger.info(f"Comparing weeks: Prev Monday: {prev_monday_date} (from {previous_entry_date_obj.date()}), Curr Monday: {curr_monday_date} (from {current_entry_date_obj.date()})")
+                    if prev_monday_date != curr_monday_date:
+                        separator_due_to_week_change = True
+                
+                if separator_due_to_week_change:
+                    final_content_parts.append("\n\n---\n\n")  # Separator includes its own empty lines
+                else:
+                    final_content_parts.append("\n\n")  # Standard one empty line
+            
+            final_content_parts.append(entry_text)
+            previous_entry_date_obj = current_entry_date_obj
+            
+        final_entries_section = "".join(final_content_parts)
+
+        if title_prefix_for_reconstruction:  # If there was a title (e.g., "# Title\n")
+            title_base = title_prefix_for_reconstruction.rstrip('\n') # Get "# Title"
+            if final_entries_section:
+                # Title, one empty line, then entries, then a final newline
+                worklog_content = title_base + "\n\n" + final_entries_section + "\n"
+            else:  # Title, but no entries
+                worklog_content = title_base + "\n"  # e.g., "# Title\n"
+        else:  # No title
+            if final_entries_section:
+                worklog_content = final_entries_section + "\n"
+            else:  # No title, no entries
+                worklog_content = "\n"  # Represent an empty worklog as a single newline
+        # --- End of new parsing and reconstruction logic ---
 
         # Update the worklog file with all changes
         success = github_client.update_worklog(worklog_content, sha)

@@ -87,16 +87,29 @@ class GitHubApiClient:
         """
         # Format date as YYYY-M-D
         date_str = date.strftime("%Y-%-m-%-d")
-        
+
+        # Pattern for the header of ANY log entry (date, day, hours)
+        # Used in negative lookahead to prevent multi-line description
+        # from consuming the next log entry.
+        any_date_entry_header_pattern = r"\d{4}-\d{1,2}-\d{1,2}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):"
+
         # Look for an entry starting with the date
         # More robust pattern that handles:
         # - Optional spaces after date
         # - Any day name (not just English)
         # - Various hour formats
-        # - Multi-line descriptions
+        # - Multi-line descriptions that don't consume subsequent entries
         # - Properly handles entry boundaries
         # - Handles empty entries
-        pattern = rf"^({date_str}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):\s*[^\n]*(?:\n(?!\n)[^\n]*)*)"
+        # The main capturing group is for the entire entry.
+        # It starts with the specific date string.
+        # Then matches the rest of the header (day, hours).
+        # Then matches the first line of the description (anything not a newline).
+        # Then, it non-greedily matches subsequent lines for multi-line descriptions:
+        #   Each such line must start with a newline `\n`.
+        #   This newline must NOT be followed by the start of another entry's header (negative lookahead `(?!{any_date_entry_header_pattern})`).
+        #   Then it matches the rest of that description line `[^\n]*`.
+        pattern = rf"^({date_str}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):\s*[^\n]*(?:\n(?!{any_date_entry_header_pattern})[^\n]*)*)"
         match = re.search(pattern, content, re.MULTILINE)
         
         if match:
@@ -139,7 +152,7 @@ class GitHubApiClient:
                 title_end = content.find("\n") + 1
                 updated_content = (
                     content[:title_end] + 
-                    "\n" + new_entry + "\n\n" + 
+                    "\n" + new_entry + "\n\n" +
                     content[title_end:]
                 )
             else:
