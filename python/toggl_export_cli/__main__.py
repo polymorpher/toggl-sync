@@ -32,7 +32,7 @@ try:
     from toggl_github_sync.config import load_config
     # Assuming parse_date is needed here as well, or reimplement/copy it
     from toggl_github_sync.__main__ import parse_date # Reuse existing parser
-    from .exporter import fetch_and_export_toggl_csv
+    from toggl_export_cli.exporter import fetch_and_export_toggl_csv
 except ImportError as e:
     logger.error(
         "Could not import dependencies from 'toggl_github_sync'. "

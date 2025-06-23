@@ -38,8 +38,12 @@ dev = [
     "isort>=5.10.1",
 ]
 
+[project.scripts]
+toggl-sync = "toggl_github_sync.__main__:main"
+toggl-export = "toggl_export_cli.__main__:main"
+
 [tool.setuptools]
-packages = ["toggl_github_sync"]
+packages = ["toggl_github_sync", "toggl_export_cli"]
 
 [tool.black]
 line-length = 88
