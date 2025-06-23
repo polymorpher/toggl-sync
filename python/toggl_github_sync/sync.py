@@ -53,6 +53,9 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
         worklog_content, sha = github_client.get_worklog_content()
         original_worklog_content = worklog_content
 
+        # Get all time entries for the entire range at once
+        all_entries = toggl_client.get_time_entries(start_date, end_date)
+
         # Process each day in the range
         current_date = end_date.date()
         start_date_date = start_date.date()
@@ -63,11 +66,14 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
             day_start = timezone.localize(datetime.combine(current_date, datetime.min.time()))
             day_end = timezone.localize(datetime.combine(current_date, datetime.max.time()))
 
-            # Get time entries for this day
-            entries = toggl_client.get_time_entries(day_start, day_end)
+            # Filter entries for the current day from the full list
+            entries_for_day = [
+                e for e in all_entries 
+                if day_start <= datetime.fromisoformat(e["start"].replace("Z", "+00:00")).astimezone(timezone) <= day_end
+            ]
 
             # Calculate total hours
-            total_hours = toggl_client.calculate_daily_hours(entries)
+            total_hours = toggl_client.calculate_daily_hours(entries_for_day)
 
             # Skip days with 0 hours
             if total_hours == 0:
@@ -87,7 +93,7 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
 
             # Get descriptions from entries and join with periods
             descriptions = []
-            for entry in entries:
+            for entry in entries_for_day:
                 if entry.get("description"):
                     desc = entry["description"].strip()
                     if desc:
@@ -177,21 +183,35 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
         # Remove leading blank lines from content_to_parse (e.g., the one often after a title)
         content_to_parse = content_to_parse.lstrip('\n')
 
+        # Clean up all horizontal rule separators, letting the script re-create them.
+        content_to_parse = re.sub(r'^\s*---\s*$', '', content_to_parse, flags=re.MULTILINE)
+
         if content_to_parse.strip():  # If there's anything left to parse
             # Regex to identify the header of any log entry
             generic_header_regex_str = r"\d{4}-\d{1,2}-\d{1,2}\s+[A-Za-z]+\s*\(\d+\.?\d*h\+?\):"
             
-            # Regex to find individual, complete entries (including multi-line descriptions)
-            # It matches an entry starting with a header, followed by its description lines.
-            # The negative lookahead `(?!{generic_header_regex_str})` ensures description lines
-            # are not mistaken for new entry headers.
-            individual_entry_pattern = rf"^({generic_header_regex_str}[^\n]*(?:\n(?!{generic_header_regex_str})[^\n]*)*)"
+            # Split by separator, keeping the separator
+            parts = re.split(r'(\n\s*---\s*\n)', content_to_parse)
 
-            for match in re.finditer(individual_entry_pattern, content_to_parse, re.MULTILINE):
-                parsed_log_entries.append(match.group(0).strip()) # Add the clean entry text
+            for part in parts:
+                if re.match(r'\n\s*---\s*\n', part):
+                    if parsed_log_entries and parsed_log_entries[-1] != "---":
+                        parsed_log_entries.append("---")
+                    continue
 
-        # Sort entries in reverse chronological order
+                # Regex to find individual, complete entries (including multi-line descriptions)
+                # It matches an entry starting with a header, followed by its description lines.
+                # The negative lookahead `(?!{generic_header_regex_str})` ensures description lines
+                # are not mistaken for new entry headers.
+                individual_entry_pattern = rf"^({generic_header_regex_str}[^\n]*(?:\n(?!{generic_header_regex_str})[^\n]*)*)"
+
+                for match in re.finditer(individual_entry_pattern, part, re.MULTILINE):
+                    parsed_log_entries.append(match.group(0).strip()) # Add the clean entry text
+
+        # Sort entries in reverse chronological order, keeping separators in place
         def get_entry_date_from_string(entry_text: str) -> datetime:
+            if entry_text == "---":
+                return datetime.max # Keep separators at the top for now
             try:
                 # Extract date string from the start of entry_text
                 match = re.match(r"(\d{4}-\d{1,2}-\d{1,2})", entry_text)
@@ -210,23 +230,37 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
         previous_entry_date_obj = None
 
         for i, entry_text in enumerate(parsed_log_entries):
+            if entry_text == "---":
+                continue # We will add separators based on date logic
+
             current_entry_date_obj = get_entry_date_from_string(entry_text)
             # logger.info(f"Processing entry for sorting: Date: {current_entry_date_obj.strftime('%Y-%m-%d') if current_entry_date_obj != datetime.min else 'Invalid Date'}, Entry: '{entry_text[:70]}...'")
             if i > 0:  # If not the first entry, decide on the separator to prepend
-                separator_due_to_week_change = False
-                if previous_entry_date_obj != datetime.min and current_entry_date_obj != datetime.min:
-                    # Calculate the Monday of the week for the previous entry
-                    prev_monday_date = previous_entry_date_obj.date() - timedelta(days=previous_entry_date_obj.weekday())
-                    # Calculate the Monday of the week for the current entry
-                    curr_monday_date = current_entry_date_obj.date() - timedelta(days=current_entry_date_obj.weekday())
-                    # logger.info(f"Comparing weeks: Prev Monday: {prev_monday_date} (from {previous_entry_date_obj.date()}), Curr Monday: {curr_monday_date} (from {current_entry_date_obj.date()})")
-                    if prev_monday_date != curr_monday_date:
-                        separator_due_to_week_change = True
+                # Find previous real entry to compare dates
+                prev_entry_text = ""
+                for j in range(i - 1, -1, -1):
+                    if parsed_log_entries[j] != "---":
+                        prev_entry_text = parsed_log_entries[j]
+                        break
                 
-                if separator_due_to_week_change:
-                    final_content_parts.append("\n\n---\n\n")  # Separator includes its own empty lines
-                else:
-                    final_content_parts.append("\n\n")  # Standard one empty line
+                if prev_entry_text:
+                    previous_entry_date_obj = get_entry_date_from_string(prev_entry_text)
+                    separator_due_to_week_change = False
+                    if previous_entry_date_obj != datetime.min and current_entry_date_obj != datetime.min and previous_entry_date_obj != datetime.max:
+                        # Calculate the Monday of the week for the previous entry
+                        prev_monday_date = previous_entry_date_obj.date() - timedelta(days=previous_entry_date_obj.weekday())
+                        # Calculate the Monday of the week for the current entry
+                        curr_monday_date = current_entry_date_obj.date() - timedelta(days=current_entry_date_obj.weekday())
+                        # logger.info(f"Comparing weeks: Prev Monday: {prev_monday_date} (from {previous_entry_date_obj.date()}), Curr Monday: {curr_monday_date} (from {current_entry_date_obj.date()})")
+                        if prev_monday_date != curr_monday_date:
+                            separator_due_to_week_change = True
+                    
+                    if separator_due_to_week_change:
+                        final_content_parts.append("\n\n---\n\n")  # Separator includes its own empty lines
+                    else:
+                        final_content_parts.append("\n\n")  # Standard one empty line
+                else: # No previous entry, this is the first one
+                     pass # No separator needed
             
             final_content_parts.append(entry_text)
             previous_entry_date_obj = current_entry_date_obj

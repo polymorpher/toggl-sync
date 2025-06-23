@@ -26,7 +26,7 @@ class TogglApiClient:
         self.timezone = pytz.timezone(config.timezone)
         
     def get_time_entries(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> List[Dict[str, Any]]:
-        """Get time entries from Toggl API.
+        """Get time entries from Toggl API, using dynamic pagination based on response.
         
         Args:
             start_date: Start date for time entries (default: start of current day in configured timezone)
@@ -41,32 +41,62 @@ class TogglApiClient:
             start_date = datetime.combine(now.date(), time.min).replace(tzinfo=self.timezone)
             end_date = datetime.combine(now.date(), time.max).replace(tzinfo=self.timezone)
         
-        # Format dates for Toggl API
-        start_date_str = start_date.isoformat()
-        end_date_str = end_date.isoformat()
+        all_entries = []
+        seen_entry_ids = set()
         
-        logger.info(f"Fetching Toggl time entries from {start_date_str} to {end_date_str}")
+        current_end_date = end_date
+
+        while True:
+            # Format dates for Toggl API
+            start_date_str = start_date.isoformat()
+            end_date_str = current_end_date.isoformat()
+            
+            logger.info(f"Fetching Toggl time entries from {start_date_str} to {end_date_str}")
+            
+            # Build request URL with parameters
+            url = f"{self.BASE_URL}/me/time_entries"
+            params = {"start_date": start_date_str, "end_date": end_date_str}
+            
+            # Make request to Toggl API
+            response = requests.get(
+                url,
+                params=params,
+                auth=(self.api_token, "api_token"),
+                headers={"Content-Type": "application/json"},
+            )
+            
+            # Check for errors
+            response.raise_for_status()
+            
+            chunk = response.json()
+            if not chunk:
+                break  # No more entries to fetch
+
+            new_entries_found_in_chunk = False
+            for entry in chunk:
+                if entry["id"] not in seen_entry_ids:
+                    all_entries.append(entry)
+                    seen_entry_ids.add(entry["id"])
+                    new_entries_found_in_chunk = True
+
+            # If the chunk contained only entries we've already seen, we're done.
+            if not new_entries_found_in_chunk:
+                break
+
+            # The last entry in the chunk is the oldest. Its start time is the end for the next chunk.
+            oldest_entry_in_chunk = chunk[-1]
+            current_end_date = datetime.fromisoformat(oldest_entry_in_chunk["start"].replace("Z", "+00:00"))
+
+            # In essence, it's a safety net to guarantee the loop terminates and doesn't accidentally start fetching data from before the originally requested time period. While the other two exit conditions (if not chunk: and if not new_entries_found_in_chunk:) are the ones expected to terminate the loop in normal operation, this extra check provides an additional layer of robustness against the unexpected.
+            # It's a harmless check, but I understand that it can be confusing since its condition shouldn't be met. If you find it makes the code harder to understand, I'm happy to remove it.
+            # If the next fetch would start before our original start date, we're done.
+            if current_end_date < start_date:
+                break
         
-        # Build request URL with parameters
-        url = f"{self.BASE_URL}/me/time_entries"
-        params = {
-            "start_date": start_date_str,
-            "end_date": end_date_str,
-        }
-        
-        # Make request to Toggl API
-        response = requests.get(
-            url,
-            params=params,
-            auth=(self.api_token, "api_token"),
-            headers={"Content-Type": "application/json"},
-        )
-        
-        # Check for errors
-        response.raise_for_status()
+        logger.info(f"Fetched a total of {len(all_entries)} unique entries.")
         
         # Return time entries
-        return response.json()
+        return all_entries
     
     def get_current_time_entry(self) -> Optional[Dict[str, Any]]:
         """Get the current running time entry, if any.
