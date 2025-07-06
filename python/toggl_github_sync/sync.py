@@ -24,8 +24,8 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
 
     Args:
         config: Application configuration
-        start_date: Start date for time entries (default: start of current day in configured timezone)
-        end_date: End date for time entries (default: end of current day in configured timezone)
+        start_date: Start date for time entries (default: 3 days ago)
+        end_date: End date for time entries (default: now)
 
     Returns:
         True if sync was successful
@@ -38,10 +38,11 @@ def sync_toggl_to_github(config: Config, start_date: Optional[datetime] = None, 
         # Get timezone
         timezone = pytz.timezone(config.timezone)
 
-        # If no dates provided, use today
+        # If no dates provided, use a 3-day window ending now
         if start_date is None and end_date is None:
-            start_date = datetime.now(timezone)
-            end_date = start_date
+            now_in_tz = datetime.now(timezone)
+            start_date = (now_in_tz - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = now_in_tz
 
         # Ensure dates are in the configured timezone
         if start_date.tzinfo is None:
