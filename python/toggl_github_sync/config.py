@@ -12,13 +12,14 @@ from dotenv import load_dotenv
 class Config:
     """Configuration for toggl_github_sync."""
     
-    # Toggl API
-    toggl_api_token: str
-    
-    # GitHub API
-    github_token: str
+    # Required (no defaults)
+    toggl_api_token: str  # Toggl API
+    github_token: str     # GitHub API
     github_repo: str
     github_worklog_path: str
+
+    # Optional (defaults below)
+    toggl_workspace_id: Optional[int] = None
     
     # Time Zone
     timezone: str = "America/Los_Angeles"  # Default to US Pacific Time
@@ -50,6 +51,7 @@ def load_config() -> Config:
     
     # Required configuration
     toggl_api_token = os.getenv("TOGGL_API_TOKEN")
+    toggl_workspace_id_str = os.getenv("TOGGL_WORKSPACE_ID")
     github_token = os.getenv("GITHUB_TOKEN")
     github_repo = os.getenv("GITHUB_REPO")
     github_worklog_path = os.getenv("GITHUB_WORKLOG_PATH")
@@ -57,6 +59,7 @@ def load_config() -> Config:
     # Validate required configuration
     if not toggl_api_token:
         raise ValueError("TOGGL_API_TOKEN environment variable is required")
+    # TOGGL_WORKSPACE_ID is optional unless using Reports API; validate later at call site
     if not github_token:
         raise ValueError("GITHUB_TOKEN environment variable is required")
     if not github_repo:
@@ -83,8 +86,17 @@ def load_config() -> Config:
     # Log file
     log_file = os.getenv("LOG_FILE")
     
+    # Parse workspace id (if provided)
+    toggl_workspace_id: Optional[int] = None
+    if toggl_workspace_id_str is not None:
+        try:
+            toggl_workspace_id = int(toggl_workspace_id_str)
+        except (TypeError, ValueError):
+            raise ValueError("TOGGL_WORKSPACE_ID must be an integer if provided")
+
     return Config(
         toggl_api_token=toggl_api_token,
+        toggl_workspace_id=toggl_workspace_id,
         github_token=github_token,
         github_repo=github_repo,
         github_worklog_path=github_worklog_path,

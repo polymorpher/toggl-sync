@@ -18,6 +18,7 @@ class TestTogglApiClient(unittest.TestCase):
         self.mock_config = MagicMock(spec=Config)
         self.mock_config.toggl_api_token = "test_token"
         self.mock_config.timezone = "US/Pacific"
+        self.mock_config.toggl_workspace_id = 12345
         self.client = TogglApiClient(self.mock_config)
 
     @patch("toggl_github_sync.api.toggl.requests.get")

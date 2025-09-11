@@ -14,6 +14,7 @@ class TestConfig(unittest.TestCase):
 
     @patch.dict(os.environ, {
         "TOGGL_API_TOKEN": "test_toggl_token",
+        "TOGGL_WORKSPACE_ID": "12345",
         "GITHUB_TOKEN": "test_github_token",
         "GITHUB_REPO": "test/repo",
         "GITHUB_WORKLOG_PATH": "progress/test.md",
@@ -46,6 +47,7 @@ class TestConfig(unittest.TestCase):
 
     @patch.dict(os.environ, {
         "TOGGL_API_TOKEN": "test_toggl_token",
+        "TOGGL_WORKSPACE_ID": "12345",
         "GITHUB_TOKEN": "test_github_token",
         "GITHUB_REPO": "test/repo",
         "GITHUB_WORKLOG_PATH": "progress/test.md",
@@ -79,6 +81,7 @@ class TestConfig(unittest.TestCase):
 
     @patch.dict(os.environ, {
         "TOGGL_API_TOKEN": "test_toggl_token",
+        "TOGGL_WORKSPACE_ID": "12345",
         "GITHUB_TOKEN": "test_github_token",
         "GITHUB_REPO": "test/repo",
         "GITHUB_WORKLOG_PATH": "progress/test.md",
